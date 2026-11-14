@@ -6,6 +6,21 @@ Minimal starting point for a new yesvus repository. **Replace this README with t
 
 Describe the problem, current status, scope, and how to use the project.
 
+## Install with an AI coding agent
+
+Copy into your AI coding tool, replacing placeholders with the actual
+repository name and URL after using this template:
+
+~~~text
+Help me install PROJECT from PROJECT_REPOSITORY_URL for local use.
+Read INSTALL_PROMPT.md, README.md and AGENTS.md first.
+Check prerequisites and ask before installing dependencies or changing
+configuration. Run the project's actual documented tests and report results.
+Never deploy or request/commit secrets without separate authorization.
+~~~
+
+[Full installation prompt template](INSTALL_PROMPT.md).
+
 ## Development
 
 Add the real environment/setup and verification commands for this project's stack. Do not claim tests passed until they have been run.

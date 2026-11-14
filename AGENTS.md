@@ -10,3 +10,6 @@ This file is the repository-specific entrypoint for coding agents. Update it whe
 - If a narrower directory contains additional agent instructions, follow them for work in that directory.
 
 Project-specific commands and policies: **add when the stack is chosen**. Do not invent test commands here.
+
+- Keep INSTALL_PROMPT.md user-oriented, accurate for the chosen stack, and
+  aligned with these safety rules; do not advertise setup placeholders.
