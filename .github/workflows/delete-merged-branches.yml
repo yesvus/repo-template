@@ -28,6 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          # Space-separated. 'name' matches exactly; 'prefix/' or 'prefix*' match by prefix. No other wildcards.
           KEEP: ${{ vars.HYGIENE_KEEP_BRANCHES || 'staging deploy/ release/' }}
         run: |
           command -v python3 >/dev/null || { echo "python3 is required on this runner"; exit 1; }
