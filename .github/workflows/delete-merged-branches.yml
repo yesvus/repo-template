@@ -59,16 +59,18 @@ jobs:
           default = call("GET", f"/repos/{repo}")["default_branch"]
           merged, open_refs = {}, set()
           for pr in pages(f"/repos/{repo}/pulls?state=all"):
+              if pr["state"] == "open":
+                  open_refs.add(pr["base"]["ref"])
               if pr["head"]["repo"] is None or pr["head"]["repo"]["full_name"] != repo:
                   continue
               ref = pr["head"]["ref"]
               if pr["state"] == "open":
-                  open_refs.add(ref)
+                  open_refs.update((ref, pr["base"]["ref"]))
               elif pr["merged_at"]:
                   merged.setdefault(ref, set()).add(pr["head"]["sha"])
 
           deleted = 0
-          for b in pages(f"/repos/{repo}/branches"):
+          for b in list(pages(f"/repos/{repo}/branches")):
               name, sha = b["name"], b["commit"]["sha"]
               if name == default or b.get("protected") or name in open_refs:
                   continue
