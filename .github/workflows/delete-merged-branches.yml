@@ -1,0 +1,82 @@
+name: Delete merged branches
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List branches without deleting them
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: delete-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ${{ vars.HYGIENE_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Delete branches whose head is a merged PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+        run: |
+          command -v python3 >/dev/null || { echo "python3 is required on this runner"; exit 1; }
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+
+          repo, token = os.environ["REPO"], os.environ["GH_TOKEN"]
+          dry = os.environ["DRY_RUN"].lower() == "true"
+          api = "https://api.github.com"
+
+          def call(method, path):
+              req = urllib.request.Request(api + path, method=method, headers={
+                  "Authorization": f"Bearer {token}",
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28"})
+              with urllib.request.urlopen(req) as r:
+                  body = r.read()
+                  return json.loads(body) if body else None
+
+          def pages(path):
+              page = 1
+              while True:
+                  sep = "&" if "?" in path else "?"
+                  items = call("GET", f"{path}{sep}per_page=100&page={page}")
+                  if not items:
+                      return
+                  yield from items
+                  page += 1
+
+          default = call("GET", f"/repos/{repo}")["default_branch"]
+          merged, open_refs = {}, set()
+          for pr in pages(f"/repos/{repo}/pulls?state=all"):
+              if pr["head"]["repo"] is None or pr["head"]["repo"]["full_name"] != repo:
+                  continue
+              ref = pr["head"]["ref"]
+              if pr["state"] == "open":
+                  open_refs.add(ref)
+              elif pr["merged_at"]:
+                  merged.setdefault(ref, set()).add(pr["head"]["sha"])
+
+          deleted = 0
+          for b in pages(f"/repos/{repo}/branches"):
+              name, sha = b["name"], b["commit"]["sha"]
+              if name == default or b.get("protected") or name in open_refs:
+                  continue
+              if sha not in merged.get(name, ()):
+                  continue
+              print(("would delete " if dry else "delete ") + name)
+              if not dry:
+                  call("DELETE", f"/repos/{repo}/git/refs/heads/" + urllib.parse.quote(name, safe=""))
+              deleted += 1
+          print(f"{'matched' if dry else 'deleted'}: {deleted}")
+          PY
