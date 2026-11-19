@@ -28,6 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          KEEP: ${{ vars.HYGIENE_KEEP_BRANCHES || 'staging deploy/ release/' }}
         run: |
           command -v python3 >/dev/null || { echo "python3 is required on this runner"; exit 1; }
           python3 - <<'PY'
@@ -35,6 +36,10 @@ jobs:
 
           repo, token = os.environ["REPO"], os.environ["GH_TOKEN"]
           dry = os.environ["DRY_RUN"].lower() == "true"
+          keep = os.environ["KEEP"].split()
+
+          def kept(name):
+              return any(name.startswith(k) if k.endswith("/") else name == k for k in keep)
           api = "https://api.github.com"
 
           def call(method, path):
@@ -72,13 +77,17 @@ jobs:
           deleted = 0
           for b in list(pages(f"/repos/{repo}/branches")):
               name, sha = b["name"], b["commit"]["sha"]
-              if name == default or b.get("protected") or name in open_refs:
+              if name == default or b.get("protected") or name in open_refs or kept(name):
                   continue
               if sha not in merged.get(name, ()):
                   continue
               print(("would delete " if dry else "delete ") + name)
+              ref = urllib.parse.quote(name, safe="")
               if not dry:
-                  call("DELETE", f"/repos/{repo}/git/refs/heads/" + urllib.parse.quote(name, safe=""))
+                  if call("GET", f"/repos/{repo}/git/ref/heads/{ref}")["object"]["sha"] != sha:
+                      print("skip moved " + name)
+                      continue
+                  call("DELETE", f"/repos/{repo}/git/refs/heads/{ref}")
               deleted += 1
           print(f"{'matched' if dry else 'deleted'}: {deleted}")
           PY
