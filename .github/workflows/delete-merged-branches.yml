@@ -32,14 +32,23 @@ jobs:
         run: |
           command -v python3 >/dev/null || { echo "python3 is required on this runner"; exit 1; }
           python3 - <<'PY'
-          import json, os, urllib.parse, urllib.request
+          import json, os, urllib.error, urllib.parse, urllib.request
 
           repo, token = os.environ["REPO"], os.environ["GH_TOKEN"]
           dry = os.environ["DRY_RUN"].lower() == "true"
           keep = os.environ["KEEP"].split()
 
           def kept(name):
-              return any(name.startswith(k) if k.endswith("/") else name == k for k in keep)
+              for k in keep:
+                  if k.endswith("*"):
+                      k = k[:-1]
+                  elif not k.endswith("/"):
+                      if name == k:
+                          return True
+                      continue
+                  if name.startswith(k):
+                      return True
+              return False
           api = "https://api.github.com"
 
           def call(method, path):
@@ -84,7 +93,14 @@ jobs:
               print(("would delete " if dry else "delete ") + name)
               ref = urllib.parse.quote(name, safe="")
               if not dry:
-                  if call("GET", f"/repos/{repo}/git/ref/heads/{ref}")["object"]["sha"] != sha:
+                  try:
+                      current = call("GET", f"/repos/{repo}/git/ref/heads/{ref}")["object"]["sha"]
+                  except urllib.error.HTTPError as e:
+                      if e.code != 404:
+                          raise
+                      print("skip gone " + name)
+                      continue
+                  if current != sha:
                       print("skip moved " + name)
                       continue
                   call("DELETE", f"/repos/{repo}/git/refs/heads/{ref}")
