@@ -92,6 +92,7 @@ jobs:
                   continue
               print(("would delete " if dry else "delete ") + name)
               ref = urllib.parse.quote(name, safe="")
+              # Re-reading the SHA narrows the race with a concurrent push; the REST delete itself is not conditional.
               if not dry:
                   try:
                       current = call("GET", f"/repos/{repo}/git/ref/heads/{ref}")["object"]["sha"]
