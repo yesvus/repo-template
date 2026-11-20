@@ -28,13 +28,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+          # Space-separated. 'name' matches exactly; 'prefix/' or 'prefix*' match by prefix. No other wildcards.
+          KEEP: ${{ vars.HYGIENE_KEEP_BRANCHES || 'staging deploy/ release/' }}
         run: |
           command -v python3 >/dev/null || { echo "python3 is required on this runner"; exit 1; }
           python3 - <<'PY'
-          import json, os, urllib.parse, urllib.request
+          import json, os, urllib.error, urllib.parse, urllib.request
 
           repo, token = os.environ["REPO"], os.environ["GH_TOKEN"]
           dry = os.environ["DRY_RUN"].lower() == "true"
+          keep = os.environ["KEEP"].split()
+
+          def kept(name):
+              for k in keep:
+                  if k.endswith("*"):
+                      k = k[:-1]
+                  elif not k.endswith("/"):
+                      if name == k:
+                          return True
+                      continue
+                  if name.startswith(k):
+                      return True
+              return False
           api = "https://api.github.com"
 
           def call(method, path):
@@ -72,13 +87,25 @@ jobs:
           deleted = 0
           for b in list(pages(f"/repos/{repo}/branches")):
               name, sha = b["name"], b["commit"]["sha"]
-              if name == default or b.get("protected") or name in open_refs:
+              if name == default or b.get("protected") or name in open_refs or kept(name):
                   continue
               if sha not in merged.get(name, ()):
                   continue
               print(("would delete " if dry else "delete ") + name)
+              ref = urllib.parse.quote(name, safe="")
+              # Re-reading the SHA narrows the race with a concurrent push; the REST delete itself is not conditional.
               if not dry:
-                  call("DELETE", f"/repos/{repo}/git/refs/heads/" + urllib.parse.quote(name, safe=""))
+                  try:
+                      current = call("GET", f"/repos/{repo}/git/ref/heads/{ref}")["object"]["sha"]
+                  except urllib.error.HTTPError as e:
+                      if e.code != 404:
+                          raise
+                      print("skip gone " + name)
+                      continue
+                  if current != sha:
+                      print("skip moved " + name)
+                      continue
+                  call("DELETE", f"/repos/{repo}/git/refs/heads/{ref}")
               deleted += 1
           print(f"{'matched' if dry else 'deleted'}: {deleted}")
           PY
